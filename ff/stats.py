@@ -4,7 +4,7 @@ from __future__ import annotations
 import nflreadpy as nfl
 import pandas as pd
 
-from .config import FANTASY_POSITIONS, current_season
+from .config import AUTO_REFRESH_HOURS, DATA_VERSION, FANTASY_POSITIONS, current_season
 from . import store
 
 ROSTER_COLS = ["gsis_id", "full_name", "team", "position", "status", "yahoo_id", "sleeper_id", "headshot_url"]
@@ -92,8 +92,27 @@ def refresh(season: int | None = None) -> dict[str, int]:
         ["gsis_id", "week", "report_status", "report_primary_injury", "practice_status"]
     ]
     store.save("injuries", inj)
+    store.set_meta("data_version", DATA_VERSION)
 
     return {"weekly_stats": len(weekly), "rosters": len(rosters), "schedule": len(sched), "injuries": len(inj)}
+
+
+def refresh_reason() -> str | None:
+    """Why the data should be refreshed right now, or None if it's current."""
+    from datetime import datetime, timedelta
+    upd = store.updated("weekly_stats")
+    if upd is None:
+        return "no data yet"
+    if store.get_meta("data_version") != DATA_VERSION:
+        return "the app was updated and needs to rebuild its data"
+    try:
+        age = datetime.now() - datetime.fromisoformat(upd)
+    except ValueError:
+        return "stored timestamp unreadable"
+    if age > timedelta(hours=AUTO_REFRESH_HOURS):
+        hours = int(age.total_seconds() // 3600)
+        return f"stats are {hours} hours old"
+    return None
 
 
 def weekly_stats() -> pd.DataFrame | None:

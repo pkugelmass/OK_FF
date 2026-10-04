@@ -20,6 +20,12 @@ MANUAL_ROSTERS = DATA_DIR / "rosters.csv"             # your league rosters (loc
 
 FANTASY_POSITIONS = ["QB", "RB", "WR", "TE", "K", "DEF"]
 
+# Bump this whenever ff/stats.py changes what it stores. The app then re-downloads on next launch
+# instead of running new code against old data.
+DATA_VERSION = "2026-10-04.2"
+# How old the stats may be before the app refreshes them on its own.
+AUTO_REFRESH_HOURS = 6
+
 load_dotenv(ENV_PATH)
 
 

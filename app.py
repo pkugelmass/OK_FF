@@ -311,6 +311,17 @@ def reset_knobs():
         st.session_state[k] = v
 
 
+# Refresh on launch when data is missing, stale, or from an older version of the app.
+# Done once per browser session; the sidebar button is still there for a manual pull.
+reason = stats.refresh_reason()
+if reason and not st.session_state.get("auto_refreshed"):
+    st.session_state["auto_refreshed"] = True
+    try:
+        st.toast(f"Refreshing data: {reason}.", icon="🔄")
+        do_refresh()
+    except Exception as e:  # offline, nflverse down, etc. Keep going with whatever data exists.
+        st.warning(f"Couldn't refresh data ({reason}): {e}. Showing the last downloaded stats.")
+
 cache_key = store.updated("weekly_stats") or "none"
 table, next_week, scored = build_player_table(cache_key, blend, shrink)
 

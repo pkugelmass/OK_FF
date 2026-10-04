@@ -36,6 +36,17 @@ def load(name: str) -> pd.DataFrame | None:
         return pd.read_sql(f"SELECT * FROM {name}", con)
 
 
+def get_meta(name: str) -> str | None:
+    """Read a free-form value from the meta table (e.g. the data format version)."""
+    return updated(name)
+
+
+def set_meta(name: str, value: str) -> None:
+    with connect() as con:
+        con.execute("CREATE TABLE IF NOT EXISTS meta (name TEXT PRIMARY KEY, updated TEXT)")
+        con.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (name, value))
+
+
 def updated(name: str) -> str | None:
     with connect() as con:
         try:

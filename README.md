@@ -6,8 +6,9 @@ and making our own weekly projections.
 ## Run it
 
 Double-click the **Fantasy Football HQ** shortcut on your Desktop. It checks GitHub for a newer
-version, then opens the app in your browser. Click **Refresh data** in the sidebar to pull this
-season's stats. Takes about 10 seconds. Close the black window to stop the app.
+version, then opens the app in your browser. Stats refresh on their own when the app opens if they're
+more than 6 hours old or the app was updated; **Refresh data** in the sidebar pulls them any time.
+Close the black window to stop the app.
 
 (The shortcut runs `update.bat`, which runs `start.bat`. Either can also be double-clicked directly.)
 
