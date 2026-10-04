@@ -53,6 +53,12 @@ def _team_lookup() -> dict[str, str]:
     lookup = {a: a for a in teams["team_abbr"]}
     lookup.update({normalize_name(n): a for n, a in zip(teams["team_name"], teams["team_abbr"])})
     lookup.update({normalize_name(n): a for n, a in zip(teams["team_nick"], teams["team_abbr"])})
+    # city alone, the way Yahoo shows a defense: "San Francisco", "Green Bay", "New England"
+    for name, nick, abbr in zip(teams["team_name"], teams["team_nick"], teams["team_abbr"]):
+        city = normalize_name(name.replace(nick, ""))
+        if city and city not in lookup:
+            lookup[city] = abbr
+    lookup.pop("", None)
     return lookup
 
 
@@ -142,14 +148,25 @@ def extract_players(text: str, rosters: pd.DataFrame, teams: pd.DataFrame | None
         key = normalize_name(name)
         if len(key) >= 6 and key in blob:
             found.append(name)
-    # Yahoo shows a defense as its city/name next to "DEF", e.g. "San Francisco  SF - DEF"
+    # Yahoo shows a defense as its city next to "ABBR - DEF", e.g. "New York  NYJ - DEF".
+    # The abbreviation is unambiguous (New York / Los Angeles each have two teams), so use it when present.
     if teams is not None:
+        yahoo_abbr = {"LA": ["LAR", "LA"], "JAX": ["JAX", "JAC"], "WAS": ["WAS", "WSH"]}
+        by_abbr = []
         for _, t in teams.iterrows():
-            city = t["team_name"].replace(t["team_nick"], "").strip()
-            for label in (t["team_name"], city, t["team_nick"]):
-                if re.search(re.escape(label) + r"[\s\S]{0,40}?\bDEF\b", text, flags=re.I):
-                    found.append(f"{t['team_abbr']} D/ST")
+            for a in yahoo_abbr.get(t["team_abbr"], [t["team_abbr"]]):
+                if re.search(r"\b" + re.escape(a) + r"\s*-\s*DEF\b", text, flags=re.I):
+                    by_abbr.append(f"{t['team_abbr']} D/ST")
                     break
+        if by_abbr:
+            found.extend(by_abbr)
+        else:
+            for _, t in teams.iterrows():
+                city = t["team_name"].replace(t["team_nick"], "").strip()
+                for label in (t["team_name"], city, t["team_nick"]):
+                    if re.search(re.escape(label) + r"[\s\S]{0,40}?\bDEF\b", text, flags=re.I):
+                        found.append(f"{t['team_abbr']} D/ST")
+                        break
     return sorted(set(found))
 
 
