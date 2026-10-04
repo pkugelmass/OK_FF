@@ -43,7 +43,7 @@ def load_scoring() -> dict[str, float]:
 
 
 def scoring_source() -> str:
-    return "Yahoo league settings" if SCORING_LEAGUE.exists() else "default (half-PPR)"
+    return "Yahoo league settings" if SCORING_LEAGUE.exists() else "default (full PPR)"
 
 
 def load_position_limits() -> dict[str, int]:

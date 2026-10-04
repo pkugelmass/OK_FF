@@ -1,5 +1,5 @@
 {
-  "_comment": "Default Yahoo-style half-PPR scoring. Overwritten by config/scoring.json after a Yahoo sync. Keys are nflverse stat columns; values are points per unit.",
+  "_comment": "Default full-PPR scoring (1 point per reception). Overwritten by config/scoring.json after a Yahoo sync. Keys are nflverse stat columns; values are points per unit.",
   "passing_yards": 0.04,
   "passing_tds": 4,
   "passing_interceptions": -1,
@@ -7,7 +7,7 @@
   "rushing_yards": 0.1,
   "rushing_tds": 6,
   "rushing_2pt_conversions": 2,
-  "receptions": 0.5,
+  "receptions": 1,
   "receiving_yards": 0.1,
   "receiving_tds": 6,
   "receiving_2pt_conversions": 2,

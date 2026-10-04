@@ -41,7 +41,7 @@ part of the repo, so updates never touch it.
 
 - Downloads every player's weekly stats from [nflverse](https://github.com/nflverse) (free, no account).
 - Scores them with the league's scoring rules (`data/scoring.json` once Yahoo is synced, otherwise the
-  half-PPR default in `config/scoring.default.json`).
+  full-PPR default in `config/scoring.default.json`).
 - Shows the top N at each position (change N in the sidebar), with total, per-game, last-3-game form,
   next opponent, a projection, and position-specific stats (passing yards for QBs, targets for WRs,
   field goal distances for kickers, sacks and points allowed for defenses, and so on).
@@ -53,6 +53,9 @@ part of the repo, so updates never touch it.
   Anyone not listed shows as a Free Agent. Rows whose team starts with "Example" are ignored.
 - Shows injury status (Out / Doubtful / Questionable / IR) and projects zero for anyone who can't play.
 - Shades rows for players who have already played this week.
+- **Teams** tab: every league team's best starting lineup (slots in `config/lineup.json`), ranked by
+  points per game, with this week's projected lineup and a per-slot breakdown. Flags roster entries
+  that didn't match a player.
 - **Matchups** tab: heatmap of how each opponent affects each position.
 - **Accuracy** tab: re-runs the projections for past weeks and reports how far off they were, next to two
   naive baselines. Sliders there tune the model live; "Reset to defaults" puts it back.

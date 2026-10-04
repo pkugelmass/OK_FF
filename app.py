@@ -5,7 +5,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from ff import backtest, config, ownership, projections, scoring, stats, store
+from ff import backtest, config, lineup, ownership, projections, scoring, stats, store
 from ff import yahoo
 
 st.set_page_config(page_title="Fantasy Football HQ", page_icon="🏈", layout="wide")
@@ -322,7 +322,7 @@ week_cols = sorted([c for c in table.columns if c.startswith("W") and c[1:].isdi
 BASE_COLS = ["Rk", "ProjRk", "Player", "Inj", "NFL", "Owner", "G", "Total", "PPG", "Last3", "Opp", "OppFac",
              "Proj", "Trend"]
 
-tabs = st.tabs(positions + ["All", "Matchups", "Accuracy"])
+tabs = st.tabs(positions + ["All", "Teams", "Matchups", "Accuracy"])
 for tab, pos in zip(tabs, positions + ["All"]):
     with tab:
         df = table if pos == "All" else table[table["Pos"] == pos]
@@ -376,6 +376,46 @@ for tab, pos in zip(tabs, positions + ["All"]):
             st.markdown("**Opportunity vs production.** Dots below the dashed line get volume without points "
                         "(buy low or stay away); dots above it are efficient. Orange = free agent.")
             st.altair_chart(chart, width="stretch")
+
+with tabs[-3]:
+    st.subheader("League teams")
+    strength, lineups = lineup.team_strength(table, ownership.FREE_AGENT)
+    if strength.empty:
+        st.write("No league rosters entered yet. Use **League rosters** in the sidebar to add them.")
+    else:
+        slots_text = ", ".join(f"{n} {s}" for s, n in lineup.load_slots()[0])
+        st.caption(
+            f"Each team's best possible starting lineup ({slots_text}), picked by season points per game. "
+            f"**Lineup PPG** is the sum of those starters' per-game averages: the team's general strength. "
+            f"**This week Proj** re-picks the lineup by this week's projections (injured players score zero). "
+            f"Slot columns show the PPG each slot contributes, so you can see where a team is thin."
+        )
+        bar = alt.Chart(strength).mark_bar(color="#2E7D32", cornerRadiusEnd=4).encode(
+            x=alt.X("Lineup PPG:Q", title="Best lineup, points per game"),
+            y=alt.Y("Team:N", sort="-x", title=None),
+            tooltip=["Team", "Lineup PPG", "This week Proj", "vs median"],
+        ).properties(height=26 * len(strength))
+        rule = alt.Chart(pd.DataFrame({"m": [strength["Lineup PPG"].median()]})).mark_rule(
+            color="#9A9A94", strokeDash=[4, 4]).encode(x="m:Q")
+        st.altair_chart(bar + rule, width="stretch")
+        st.dataframe(
+            strength.style.format(precision=1),
+            width="stretch", hide_index=True,
+            column_config={
+                "Rk": st.column_config.NumberColumn(width="small"),
+                "vs median": st.column_config.NumberColumn(help="Lineup PPG minus the league median"),
+                "This week Proj": st.column_config.NumberColumn(help=f"Best lineup by week {next_week} projections"),
+                "Bench PPG": st.column_config.NumberColumn(help="Combined PPG of everyone not in the lineup"),
+            },
+        )
+        pick = st.selectbox("Show a team's lineup", options=list(strength["Team"]))
+        st.dataframe(lineups[pick].style.format(precision=1), width="stretch", hide_index=True)
+
+        missing = ownership.unmatched(table)
+        if not missing.empty:
+            st.warning(f"{len(missing)} roster entries didn't match a player with stats this season. "
+                       "Check spelling, or they may not have played yet.")
+            st.dataframe(missing, width="stretch", hide_index=True)
 
 with tabs[-2]:
     st.subheader(f"Week {next_week} matchups")

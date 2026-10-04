@@ -136,6 +136,28 @@ def extract_players(text: str, rosters: pd.DataFrame, teams: pd.DataFrame | None
     return sorted(set(found))
 
 
+def unmatched(players: pd.DataFrame) -> pd.DataFrame:
+    """Roster entries that didn't match any known player (typos, retired players, etc.)."""
+    own = table()
+    if own.empty:
+        return pd.DataFrame(columns=["owner", "name"])
+    keys = set(players["full_name"].map(normalize_name))
+    if "player_id" in players.columns:
+        keys |= set(players["player_id"].astype(str))
+    miss = own[~own["name_key"].isin(keys)]
+    src = manual_rosters() if store.load("yahoo_rosters") is None else None
+    names = []
+    for _, r in miss.iterrows():
+        label = r["name_key"]
+        if src is not None:
+            lookup = _team_lookup()
+            hit = src[src["player"].map(lambda p: _manual_key(p, lookup)) == r["name_key"]]
+            if not hit.empty:
+                label = hit["player"].iloc[0]
+        names.append({"owner": r["owner"], "name": label})
+    return pd.DataFrame(names, columns=["owner", "name"])
+
+
 def attach(players: pd.DataFrame) -> pd.DataFrame:
     """Add an `owner` column to a players frame that has `full_name`, `player_id`, and optionally `yahoo_id`."""
     own = table()
