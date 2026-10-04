@@ -11,18 +11,31 @@ season's stats. Takes about 10 seconds. Close the black window to stop the app.
 
 (The shortcut runs `update.bat`, which runs `start.bat`. Either can also be double-clicked directly.)
 
-## Setting up on a new laptop (one time)
+## Setting up on a new laptop (one time, about 5 minutes)
 
-1. Install Python from https://www.python.org/downloads/ . On the first screen of the installer,
-   tick **"Add python.exe to PATH"** before clicking Install.
-2. Install Git from https://git-scm.com/download/win (defaults are fine), or GitHub Desktop.
-3. Get the project: open https://github.com/pkugelmass/OK_FF , click the green **Code** button,
-   copy the URL. In the folder where you want it (e.g. Documents), right-click, **Open in Terminal**,
-   and run `git clone <that URL>`. (GitHub Desktop: File > Clone repository.)
-4. Open the new `OK_FF` folder and double-click `start.bat`. The first run installs packages
-   (a minute or two), puts a **Fantasy Football HQ** shortcut on the Desktop, and opens the app.
+Open **PowerShell** (press the Windows key, type `powershell`, press Enter) and paste this line.
+It installs Python and Git using Windows' built-in package manager:
 
-After that, just use the Desktop shortcut.
+```
+winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements; winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements
+```
+
+Say Yes if Windows asks for permission. When it finishes, **close PowerShell and open a new one**
+(so it notices the new programs), then paste:
+
+```
+cd ~\Documents; git clone https://github.com/pkugelmass/OK_FF.git; cd OK_FF; .\start.bat
+```
+
+The first run takes a minute or two to install packages, puts a **Fantasy Football HQ** shortcut on
+the Desktop, and opens the app in your browser. After that, just use the Desktop shortcut.
+
+If `winget` isn't recognized, install Python from https://www.python.org/downloads/ (tick
+"Add python.exe to PATH" on the first screen) and Git from https://git-scm.com/download/win, then
+run the second command.
+
+Your league data (rosters, scoring, downloaded stats) lives in the `data/` folder, which is not
+part of the repo, so updates never touch it.
 
 ## What it does
 
