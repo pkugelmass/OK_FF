@@ -58,6 +58,9 @@ def refresh(season: int | None = None) -> dict[str, int]:
     store.save("schedule", sched)
 
     teams = nfl.load_teams().to_pandas()[["team_abbr", "team_name", "team_nick", "team_color", "team_color2"]]
+    # nflverse lists historical abbreviations too (LAR, STL, SD, OAK); keep only teams playing this season
+    active = set(sched["home_team"]) | set(sched["away_team"])
+    teams = teams[teams["team_abbr"].isin(active)].drop_duplicates("team_abbr").reset_index(drop=True)
     store.save("teams", teams)
 
     weekly = nfl.load_player_stats([season], summary_level="week").to_pandas()
