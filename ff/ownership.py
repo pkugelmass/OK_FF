@@ -103,8 +103,18 @@ def manual_rosters() -> pd.DataFrame:
 
 
 def save_manual_rosters(df: pd.DataFrame) -> None:
+    """Write rosters.csv, keeping a dated backup of the previous version (last 20 kept)."""
+    import shutil
+    from datetime import datetime
+
     df = df[["team", "player"]].drop_duplicates()
     MANUAL_ROSTERS.parent.mkdir(exist_ok=True)
+    if MANUAL_ROSTERS.exists():
+        backups = MANUAL_ROSTERS.parent / "backups"
+        backups.mkdir(exist_ok=True)
+        shutil.copy(MANUAL_ROSTERS, backups / f"rosters-{datetime.now():%Y%m%d-%H%M%S}.csv")
+        for old in sorted(backups.glob("rosters-*.csv"))[:-20]:
+            old.unlink()
     df.to_csv(MANUAL_ROSTERS, index=False)
 
 

@@ -152,6 +152,29 @@ def cached_backtest(_cache_key: str, blend: float, shrink: float, last_week: int
     return backtest.run(scored, stats.schedule(), last_week, blend=blend, shrink=shrink)
 
 
+def restart_app():
+    """Pull the latest version from GitHub and restart the server.
+
+    Hands off to update.bat in a new console (after a short delay so this process has exited and the
+    port is free), leaves a marker so the old console closes itself, then exits. The browser tab
+    reconnects on its own once the new server is up; --no-browser stops a second tab opening.
+    """
+    import os
+    import subprocess
+    import time
+
+    config.DATA_DIR.mkdir(exist_ok=True)
+    (config.DATA_DIR / ".restart").write_text("restart requested")
+    port = os.environ.get("FFPORT", "")
+    env = dict(os.environ, FFPORT=port) if port else dict(os.environ)
+    subprocess.Popen(
+        ["cmd", "/c", "start", "OK_FF - updating", "/D", str(config.ROOT), str(config.ROOT / "assets" / "restart.bat")],
+        env=env, creationflags=subprocess.CREATE_NEW_CONSOLE,
+    )
+    time.sleep(1)
+    os._exit(0)
+
+
 def do_refresh():
     with st.status("Refreshing...", expanded=True) as s:
         st.write("Downloading NFL stats from nflverse...")
@@ -244,6 +267,10 @@ with st.sidebar:
     st.title("🏈 Fantasy Football HQ")
     if st.button("🔄 Refresh data", type="primary", width="stretch"):
         do_refresh()
+    if st.button("⬆️ Update app", width="stretch",
+                 help="Gets the latest version from GitHub and restarts. This tab reconnects by itself."):
+        st.info("Updating... the page will go grey for about 10 seconds, then come back on the new version.")
+        restart_app()
     upd = store.updated("weekly_stats")
     st.caption(f"Stats updated: {upd or 'never'}")
     st.caption(f"Scoring: {config.scoring_source()}")
@@ -304,15 +331,22 @@ with st.sidebar:
 # ---------- main ----------
 # Projection knobs live in session state so the Accuracy tab's sliders drive every table.
 KNOBS = {"knob_blend": projections.DEFAULTS["blend"], "knob_shrink": projections.DEFAULTS["shrink"]}
+_saved = config.load_settings()
 for k, v in KNOBS.items():
-    st.session_state.setdefault(k, v)
+    st.session_state.setdefault(k, float(_saved.get(k, v)))   # saved tuning survives restarts
 blend = float(st.session_state["knob_blend"])
 shrink = float(st.session_state["knob_shrink"])
+
+
+def save_knobs():
+    for k in KNOBS:
+        config.save_setting(k, float(st.session_state[k]))
 
 
 def reset_knobs():
     for k, v in KNOBS.items():
         st.session_state[k] = v
+    save_knobs()
 
 
 # Refresh on launch when data is missing, stale, or from an older version of the app.
@@ -706,10 +740,11 @@ if view_name == "Accuracy":
                 "to see whether your settings beat the defaults.")
     k1, k2, k3 = st.columns([3, 3, 1])
     k1.slider("Weight on recent form (last 3 games) vs season average", 0.0, 1.0, step=0.05,
-              key="knob_blend", format="%.2f",
-              help="0 = season average only. 1 = last-3-game form only.")
+              key="knob_blend", format="%.2f", on_change=save_knobs,
+              help="0 = season average only. 1 = last-3-game form only. Saved on this computer.")
     k2.slider("Trust in the matchup factor", 0.0, 1.0, step=0.05, key="knob_shrink", format="%.2f",
-              help="0 = ignore the opponent. 1 = use the opponent's full points-allowed effect.")
+              on_change=save_knobs,
+              help="0 = ignore the opponent. 1 = use the opponent's full points-allowed effect. Saved on this computer.")
     k3.write("")
     k3.button("Reset to defaults", on_click=reset_knobs, width="stretch")
 

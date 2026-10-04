@@ -1,5 +1,6 @@
 @echo off
 REM Gets the latest version of OK_FF from GitHub, then launches the app.
+REM Any argument (e.g. --no-browser) is passed through to start.bat.
 title OK_FF - updating
 cd /d "%~dp0"
 echo Checking for updates...
@@ -13,4 +14,4 @@ if errorlevel 1 (
 if exist .venv\Scripts\python.exe (
   .venv\Scripts\python -m pip install -q -r requirements.txt
 )
-call start.bat
+call "%~dp0start.bat" %1

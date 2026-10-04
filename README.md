@@ -8,7 +8,15 @@ and making our own weekly projections.
 Double-click the **Fantasy Football HQ** shortcut on your Desktop. It checks GitHub for a newer
 version, then opens the app in your browser. Stats refresh on their own when the app opens if they're
 more than 6 hours old or the app was updated; **Refresh data** in the sidebar pulls them any time.
+**Update app** in the sidebar gets the latest version and restarts without leaving the browser.
 Close the black window to stop the app.
+
+## Your data
+
+Everything you enter lives in the `data/` folder next to the app and is never touched by updates:
+`rosters.csv` (who owns whom), `starters.csv` (lineups you entered), `settings.json` (your team,
+projection tuning), and a `backups/` folder with the last 20 versions of the roster file. Copy the
+folder to keep a backup. The stats database in there is a cache the app rebuilds on its own.
 
 (The shortcut runs `update.bat`, which runs `start.bat`. Either can also be double-clicked directly.)
 

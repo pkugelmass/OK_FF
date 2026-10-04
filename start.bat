@@ -1,6 +1,7 @@
 @echo off
 REM Launches OK_FF (Fantasy Football HQ) in your browser.
 REM First run: creates the Python environment and a Desktop shortcut.
+REM Optional: "start.bat --no-browser" starts without opening a new browser tab (used by the in-app Update button).
 title OK_FF - Fantasy Football HQ
 cd /d "%~dp0"
 
@@ -29,6 +30,17 @@ if not exist "%USERPROFILE%\Desktop\Fantasy Football HQ.lnk" (
   powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0assets\make_shortcut.ps1"
 )
 
+set "PORT=%FFPORT%"
+if "%PORT%"=="" set "PORT=8501"
+set "FLAGS="
+if /i "%~1"=="--no-browser" set "FLAGS=--server.headless true"
+
 echo Starting the app... (close this window to stop it)
-.venv\Scripts\python -m streamlit run app.py --browser.gatherUsageStats false
+.venv\Scripts\python -m streamlit run app.py --server.port %PORT% --browser.gatherUsageStats false %FLAGS%
+
+REM The in-app Update button leaves this marker so the old window closes itself instead of waiting.
+if exist data\.restart (
+  del data\.restart
+  exit
+)
 pause
