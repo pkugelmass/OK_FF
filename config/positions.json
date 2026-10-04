@@ -1,0 +1,9 @@
+{
+  "_comment": "Default number of players to show per position. Adjustable in the app sidebar.",
+  "QB": 15,
+  "RB": 30,
+  "WR": 40,
+  "TE": 15,
+  "K": 12,
+  "DEF": 12
+}

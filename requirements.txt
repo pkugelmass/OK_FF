@@ -1,0 +1,6 @@
+streamlit>=1.40
+pandas>=2.0
+nflreadpy>=0.1.5
+yfpy>=17.0
+python-dotenv>=1.0
+openpyxl>=3.1
