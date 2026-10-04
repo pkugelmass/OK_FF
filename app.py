@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -137,6 +138,14 @@ def build_player_table(_cache_key: str, blend: float, shrink: float) -> tuple[pd
 
     summary = ownership.attach(summary).rename(columns={"owner": "Owner"})
     return summary, next_week, scored
+
+
+@st.cache_data(show_spinner=False)
+def cached_backtest(_cache_key: str, blend: float, shrink: float, last_week: int) -> pd.DataFrame:
+    """Backtest results, cached per data refresh and knob setting so the Accuracy view is instant."""
+    scored = scoring.apply(stats.weekly_stats())
+    scored = scored[scored["week"] <= last_week]
+    return backtest.run(scored, stats.schedule(), last_week, blend=blend, shrink=shrink)
 
 
 def do_refresh():
@@ -302,7 +311,8 @@ def reset_knobs():
         st.session_state[k] = v
 
 
-table, next_week, scored = build_player_table(store.updated("weekly_stats") or "none", blend, shrink)
+cache_key = store.updated("weekly_stats") or "none"
+table, next_week, scored = build_player_table(cache_key, blend, shrink)
 
 if table.empty:
     st.markdown('<div class="ffhq-banner"><h1>🏈 Fantasy Football HQ</h1><p>Kickoff time.</p></div>', unsafe_allow_html=True)
@@ -322,9 +332,15 @@ week_cols = sorted([c for c in table.columns if c.startswith("W") and c[1:].isdi
 BASE_COLS = ["Rk", "ProjRk", "Player", "Inj", "NFL", "Owner", "G", "Total", "PPG", "Last3", "Opp", "OppFac",
              "Proj", "Trend"]
 
-tabs = st.tabs(positions + ["All", "Teams", "Matchups", "Accuracy"])
-for tab, pos in zip(tabs, positions + ["All"]):
-    with tab:
+VIEWS = positions + ["All", "Teams", "Matchups", "Accuracy"]
+st.session_state.setdefault("view_pick", VIEWS[0])
+view_name = st.segmented_control("View", VIEWS, key="view_pick", label_visibility="collapsed") or VIEWS[0]
+
+
+@st.fragment
+def position_view(pos: str):
+    """One position's table and chart. A fragment, so its toggle reruns only this section."""
+    if True:
         df = table if pos == "All" else table[table["Pos"] == pos]
         # Ranks are within the position (or overall on the All tab), before any filtering
         df = df.assign(
@@ -349,8 +365,9 @@ for tab, pos in zip(tabs, positions + ["All"]):
         played = df["Played"].notna()
         # Sparklines share one scale per tab so a top player's bars are tall and a bench player's are short
         y_max = float(df[week_cols].max().max()) if week_cols else None
+        shade = np.where(np.repeat(played.values[:, None], view.shape[1], axis=1), f"background-color: {PLAYED_BG}", "")
         styled = view.style.apply(
-            lambda row: [f"background-color: {PLAYED_BG}" if played[row.name] else ""] * len(row), axis=1
+            lambda d: pd.DataFrame(shade, index=d.index, columns=d.columns), axis=None
         ).format(precision=1, na_rep="")
         st.dataframe(
             styled,
@@ -377,7 +394,11 @@ for tab, pos in zip(tabs, positions + ["All"]):
                         "(buy low or stay away); dots above it are efficient. Orange = free agent.")
             st.altair_chart(chart, width="stretch")
 
-with tabs[-3]:
+
+if view_name in positions or view_name == "All":
+    position_view(view_name)
+
+if view_name == "Teams":
     strength, lineups = lineup.team_strength(table, ownership.FREE_AGENT)
     teams_list = ownership.league_teams()
     settings = config.load_settings()
@@ -472,7 +493,9 @@ with tabs[-3]:
             st.dataframe(missing, width="stretch", hide_index=True)
 
     # ===== team detail: one picker for lineup entry, best lineup, and roster edits =====
-    if teams_list:
+    @st.fragment
+    def team_detail():
+        """Ticking a Start box or editing an owner reruns only this section, not the whole page."""
         st.divider()
         st.subheader("Team detail")
         default_idx = teams_list.index(my_team) if my_team else 0
@@ -519,7 +542,7 @@ with tabs[-3]:
                 st.session_state.pop("starters_prefill", None)
                 st.session_state["starters_rev"] = rev + 1
                 st.cache_data.clear()
-                st.rerun()
+                st.rerun(scope="app")
             if problem:
                 st.warning(problem)
             else:
@@ -568,15 +591,18 @@ with tabs[-3]:
                     ownership.set_player(pool.loc[i, "full_name"], edited_r.loc[i, "Owner"])
                 st.session_state["roster_rev"] = rrev + 1
                 st.cache_data.clear()
-                st.rerun()
+                st.rerun(scope="app")
 
-with tabs[-2]:
+    if teams_list:
+        team_detail()
+
+if view_name == "Matchups":
     st.subheader(f"Week {next_week} matchups")
     st.caption("Each cell is the matchup factor (OppFac) for that opponent and position. Orange = gives up more than "
                "average (soft matchup). Blue = tough. 1.00 = average. For DEF, the opponent is the offense they face.")
     st.altair_chart(heatmap(scored, positions, shrink), width="stretch")
 
-with tabs[-1]:
+if view_name == "Accuracy":
     st.subheader("How good are the projections?")
 
     st.markdown("**Tune the model.** These sliders change every projection in the app. Watch the numbers below "
@@ -590,7 +616,7 @@ with tabs[-1]:
     k3.write("")
     k3.button("Reset to defaults", on_click=reset_knobs, width="stretch")
 
-    results = backtest.run(scored, stats.schedule(), next_week - 1, blend=blend, shrink=shrink)
+    results = cached_backtest(cache_key, blend, shrink, next_week - 1)
     if results.empty:
         st.write("Not enough completed weeks yet. Check back after week 2.")
     else:
@@ -606,7 +632,8 @@ with tabs[-1]:
         is_default = (blend, shrink) == (projections.DEFAULTS["blend"], projections.DEFAULTS["shrink"])
         default_mae = None
         if not is_default:
-            default_results = backtest.run(scored, stats.schedule(), next_week - 1)
+            default_results = cached_backtest(cache_key, projections.DEFAULTS["blend"],
+                                              projections.DEFAULTS["shrink"], next_week - 1)
             default_mae = backtest.summarize(default_results).loc["ALL", "Model MAE"]
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Your settings" if not is_default else "Our model (defaults)", f"{overall['Model MAE']:.1f} pts off",
