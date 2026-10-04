@@ -53,9 +53,11 @@ part of the repo, so updates never touch it.
   Anyone not listed shows as a Free Agent. Rows whose team starts with "Example" are ignored.
 - Shows injury status (Out / Doubtful / Questionable / IR) and projects zero for anyone who can't play.
 - Shades rows for players who have already played this week.
-- **Teams** tab: every league team's best starting lineup (slots in `config/lineup.json`), ranked by
-  points per game, with this week's projected lineup and a per-slot breakdown. Flags roster entries
-  that didn't match a player.
+- **Teams** tab: every league team's best possible starting lineup (slots in `config/lineup.json`),
+  ranked by points per game, with a per-slot breakdown. **Set starting lineups** lets you tick who
+  each team is actually starting; the table then shows Starting PPG and points left on bench.
+  **Edit rosters** is a table with an Owner dropdown per player for quick waiver moves. Both save to
+  the local `data/` folder. Flags roster entries that didn't match a player.
 - **Matchups** tab: heatmap of how each opponent affects each position.
 - **Accuracy** tab: re-runs the projections for past weeks and reports how far off they were, next to two
   naive baselines. Sliders there tune the model live; "Reset to defaults" puts it back.

@@ -380,42 +380,136 @@ for tab, pos in zip(tabs, positions + ["All"]):
 with tabs[-3]:
     st.subheader("League teams")
     strength, lineups = lineup.team_strength(table, ownership.FREE_AGENT)
+    any_starters = not strength.empty and strength["Starting PPG"].notna().any()
     if strength.empty:
-        st.write("No league rosters entered yet. Use **League rosters** in the sidebar to add them.")
+        st.write("No league rosters entered yet. Use **Edit rosters** below or **League rosters** in the sidebar.")
     else:
         slots_text = ", ".join(f"{n} {s}" for s, n in lineup.load_slots()[0])
         st.caption(
-            f"Each team's best possible starting lineup ({slots_text}), picked by season points per game. "
-            f"**Lineup PPG** is the sum of those starters' per-game averages: the team's general strength. "
-            f"**This week Proj** re-picks the lineup by this week's projections (injured players score zero). "
-            f"Slot columns show the PPG each slot contributes, so you can see where a team is thin."
+            f"**Best lineup PPG** = the strongest lineup each roster could field ({slots_text}), summed by season "
+            f"points per game. **Starting PPG** = the lineup they're actually starting, if you've entered it below. "
+            f"**Left on bench** = the difference. Slot columns show what each slot contributes to the best lineup."
         )
-        bar = alt.Chart(strength).mark_bar(color="#2E7D32", cornerRadiusEnd=4).encode(
-            x=alt.X("Lineup PPG:Q", title="Best lineup, points per game"),
+        rank_by = "Starting PPG" if any_starters else "Best lineup PPG"
+        if any_starters:
+            rank_by = st.radio("Rank teams by", ["Starting PPG", "Best lineup PPG"], horizontal=True)
+        chart_df = strength.copy()
+        chart_df["value"] = chart_df[rank_by].fillna(chart_df["Best lineup PPG"])
+        chart_df["note"] = chart_df[rank_by].isna().map({True: " (no lineup entered, using best)", False: ""})
+        bar = alt.Chart(chart_df).mark_bar(color="#2E7D32", cornerRadiusEnd=4).encode(
+            x=alt.X("value:Q", title=f"{rank_by}, points per game"),
             y=alt.Y("Team:N", sort="-x", title=None),
-            tooltip=["Team", "Lineup PPG", "This week Proj", "vs median"],
-        ).properties(height=26 * len(strength))
-        rule = alt.Chart(pd.DataFrame({"m": [strength["Lineup PPG"].median()]})).mark_rule(
+            tooltip=["Team", "Best lineup PPG", "Starting PPG", "Left on bench", "note"],
+        ).properties(height=26 * len(chart_df))
+        rule = alt.Chart(pd.DataFrame({"m": [chart_df["value"].median()]})).mark_rule(
             color="#9A9A94", strokeDash=[4, 4]).encode(x="m:Q")
         st.altair_chart(bar + rule, width="stretch")
         st.dataframe(
-            strength.style.format(precision=1),
+            strength.sort_values(rank_by, ascending=False, na_position="last").style.format(precision=1, na_rep=""),
             width="stretch", hide_index=True,
             column_config={
-                "Rk": st.column_config.NumberColumn(width="small"),
-                "vs median": st.column_config.NumberColumn(help="Lineup PPG minus the league median"),
-                "This week Proj": st.column_config.NumberColumn(help=f"Best lineup by week {next_week} projections"),
-                "Bench PPG": st.column_config.NumberColumn(help="Combined PPG of everyone not in the lineup"),
+                "Rk": st.column_config.NumberColumn(width="small", help="Rank by best lineup PPG"),
+                "vs median": st.column_config.NumberColumn(help="Best lineup PPG minus the league median"),
+                "Starting PPG": st.column_config.NumberColumn(help="PPG of the starters entered below"),
+                "Left on bench": st.column_config.NumberColumn(help="Best lineup PPG minus Starting PPG"),
+                "Best week Proj": st.column_config.NumberColumn(help=f"Best lineup by week {next_week} projections"),
+                "Starting Proj": st.column_config.NumberColumn(help=f"Entered starters' week {next_week} projections"),
+                "Bench PPG": st.column_config.NumberColumn(help="Combined PPG of everyone not in the best lineup"),
             },
         )
+
         pick = st.selectbox("Show a team's lineup", options=list(strength["Team"]))
-        st.dataframe(lineups[pick].style.format(precision=1), width="stretch", hide_index=True)
+        c_best, c_actual = st.columns(2)
+        with c_best:
+            st.markdown("**Best possible lineup**")
+            st.dataframe(lineups[pick]["best"].style.format(precision=1), width="stretch", hide_index=True)
+        with c_actual:
+            st.markdown("**Starting lineup (as entered)**")
+            if lineups[pick]["actual"] is None:
+                st.caption("Not entered yet. Use **Set starting lineups** below.")
+            else:
+                st.dataframe(lineups[pick]["actual"].style.format(precision=1), width="stretch", hide_index=True)
 
         missing = ownership.unmatched(table)
         if not missing.empty:
             st.warning(f"{len(missing)} roster entries didn't match a player with stats this season. "
                        "Check spelling, or they may not have played yet.")
             st.dataframe(missing, width="stretch", hide_index=True)
+
+    # ----- set starting lineups -----
+    with st.expander("Set starting lineups", expanded=False):
+        teams_list = ownership.league_teams()
+        if not teams_list:
+            st.caption("Add rosters first.")
+        else:
+            need = lineup.starter_count()
+            st.caption(f"Tick the {need} players each team is starting this week, then Save. "
+                       "Saved to data/starters.csv on this computer.")
+            team = st.selectbox("Team", teams_list, key="starters_team")
+            roster = table[table["Owner"] == team][["full_name", "Player", "Pos", "NFL", "Inj", "PPG", "Proj"]]
+            roster = roster.sort_values(["Pos", "PPG"], ascending=[True, False]).reset_index(drop=True)
+            current = set(lineup.load_starters().get(team, []))
+            roster.insert(0, "Start", roster["full_name"].isin(current))
+            edited = st.data_editor(
+                roster.drop(columns=["full_name"]),
+                key=f"starters_editor_{team}_{st.session_state.get('starters_rev', 0)}",
+                width="stretch", hide_index=True,
+                disabled=["Player", "Pos", "NFL", "Inj", "PPG", "Proj"],
+                column_config={
+                    "Start": st.column_config.CheckboxColumn("Start", default=False),
+                    "PPG": st.column_config.NumberColumn(format="%.1f"),
+                    "Proj": st.column_config.NumberColumn(format="%.1f"),
+                },
+            )
+            chosen = roster[edited["Start"].values]
+            problem = lineup.check_starters(chosen)
+            if problem:
+                st.warning(problem)
+            else:
+                st.success(f"{len(chosen)} starters, fits the lineup. Starting PPG: {chosen['PPG'].sum():.1f}")
+            if st.button("Save starting lineup", type="primary", disabled=problem is not None):
+                lineup.save_starters(team, chosen["full_name"].tolist())
+                st.session_state["starters_rev"] = st.session_state.get("starters_rev", 0) + 1
+                st.cache_data.clear()
+                st.rerun()
+
+    # ----- edit rosters -----
+    with st.expander("Edit rosters", expanded=False):
+        st.caption("Change the Owner dropdown for any player, then Save. Pick 'Free Agent' to drop a player.")
+        teams_list = ownership.league_teams()
+        new_team = st.text_input("Add a league team (type a name, press Enter, then it appears in the dropdown)",
+                                 key="new_team_name")
+        if new_team.strip() and new_team.strip() not in teams_list:
+            teams_list = sorted(teams_list + [new_team.strip()])
+        options = teams_list + [ownership.FREE_AGENT]
+
+        q = st.text_input("Search players", key="roster_search", placeholder="name, NFL team, or position")
+        pool = table[["full_name", "Player", "Pos", "NFL", "Owner", "PPG"]].copy()
+        if q.strip():
+            ql = q.strip().lower()
+            pool = pool[pool["Player"].str.lower().str.contains(ql) | pool["NFL"].str.lower().eq(ql)
+                        | pool["Pos"].str.lower().eq(ql)]
+        pool = pool.sort_values("PPG", ascending=False).head(300).reset_index(drop=True)
+        rev = st.session_state.get("roster_rev", 0)
+        edited = st.data_editor(
+            pool.drop(columns=["full_name"]),
+            key=f"roster_editor_{rev}",
+            width="stretch", hide_index=True, height=min(45 + 35 * len(pool), 500),
+            disabled=["Player", "Pos", "NFL", "PPG"],
+            column_config={
+                "Owner": st.column_config.SelectboxColumn("Owner", options=options, required=True),
+                "PPG": st.column_config.NumberColumn(format="%.1f"),
+            },
+        )
+        changed = pool[edited["Owner"].values != pool["Owner"].values]
+        if len(changed):
+            st.write(f"{len(changed)} change(s) pending.")
+        if st.button("Save roster changes", type="primary", disabled=len(changed) == 0):
+            for i in changed.index:
+                ownership.set_player(pool.loc[i, "full_name"], edited.loc[i, "Owner"])
+            st.session_state["roster_rev"] = rev + 1
+            st.cache_data.clear()
+            st.rerun()
 
 with tabs[-2]:
     st.subheader(f"Week {next_week} matchups")

@@ -112,6 +112,23 @@ def set_team(team: str, players: list[str]) -> pd.DataFrame:
     return merged
 
 
+def set_player(full_name: str, owner: str | None) -> None:
+    """Move one player to `owner` in rosters.csv (None or FREE_AGENT = drop them)."""
+    current = manual_rosters()
+    lookup = _team_lookup()
+    key = _manual_key(full_name, lookup)
+    current = current[current["player"].map(lambda p: _manual_key(p, lookup)) != key]
+    if owner and owner != FREE_AGENT:
+        current = pd.concat([current, pd.DataFrame({"team": [owner], "player": [full_name]})], ignore_index=True)
+    save_manual_rosters(current)
+
+
+def league_teams() -> list[str]:
+    """League team names in the current ownership source."""
+    own = table()
+    return sorted(own["owner"].dropna().unique().tolist()) if not own.empty else []
+
+
 def extract_players(text: str, rosters: pd.DataFrame, teams: pd.DataFrame | None) -> list[str]:
     """Find every known player name in a blob of text copied from a Yahoo roster page.
 
