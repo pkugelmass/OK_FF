@@ -378,57 +378,92 @@ for tab, pos in zip(tabs, positions + ["All"]):
             st.altair_chart(chart, width="stretch")
 
 with tabs[-3]:
-    st.subheader("League teams")
     strength, lineups = lineup.team_strength(table, ownership.FREE_AGENT)
+    teams_list = ownership.league_teams()
+    settings = config.load_settings()
+    my_team = settings.get("my_team") if settings.get("my_team") in teams_list else None
     any_starters = not strength.empty and strength["Starting PPG"].notna().any()
+    MY_COLOR, OTHER_COLOR = "#C9A227", "#2E7D32"
+
     if strength.empty:
-        st.write("No league rosters entered yet. Use **Edit rosters** below or **League rosters** in the sidebar.")
+        st.subheader("League teams")
+        st.write("No league rosters entered yet. Use **League rosters** in the sidebar to paste or upload them, "
+                 "then come back here.")
     else:
-        slots_text = ", ".join(f"{n} {s}" for s, n in lineup.load_slots()[0])
-        st.caption(
-            f"**Best lineup PPG** = the strongest lineup each roster could field ({slots_text}), summed by season "
-            f"points per game. **Starting PPG** = the lineup they're actually starting, if you've entered it below. "
-            f"**Left on bench** = the difference. Slot columns show what each slot contributes to the best lineup."
-        )
-        rank_by = "Starting PPG" if any_starters else "Best lineup PPG"
-        if any_starters:
-            rank_by = st.radio("Rank teams by", ["Starting PPG", "Best lineup PPG"], horizontal=True)
-        chart_df = strength.copy()
-        chart_df["value"] = chart_df[rank_by].fillna(chart_df["Best lineup PPG"])
-        chart_df["note"] = chart_df[rank_by].isna().map({True: " (no lineup entered, using best)", False: ""})
-        bar = alt.Chart(chart_df).mark_bar(color="#2E7D32", cornerRadiusEnd=4).encode(
+        # ----- header row: my team + ranking metric -----
+        h1, h2 = st.columns([2, 3])
+        with h1:
+            pick_my = st.selectbox("My team", ["(not set)"] + teams_list,
+                                   index=(teams_list.index(my_team) + 1) if my_team else 0)
+            if pick_my != "(not set)" and pick_my != my_team:
+                config.save_setting("my_team", pick_my)
+                st.rerun()
+        with h2:
+            rank_by = "Best lineup PPG"
+            if any_starters:
+                rank_by = st.radio("Rank teams by", ["Starting PPG", "Best lineup PPG"], horizontal=True,
+                                   help="Starting = the lineups entered below. Teams without one use their best lineup.")
+
+        # ----- league table: five columns that tell the story -----
+        league = strength.copy()
+        league["value"] = league[rank_by].fillna(league["Best lineup PPG"])
+        league["This week Proj"] = league["Starting Proj"].fillna(league["Best week Proj"])
+        league = league.sort_values("value", ascending=False).reset_index(drop=True)
+        league["Rk"] = range(1, len(league) + 1)
+        if my_team:
+            mine = league.loc[league["Team"] == my_team, "value"].iloc[0]
+            league["vs you"] = (league["value"] - mine).round(1)
+        else:
+            league["vs you"] = (league["value"] - league["value"].median()).round(1)
+        league["Mine"] = league["Team"] == my_team
+
+        bar = alt.Chart(league).mark_bar(cornerRadiusEnd=4).encode(
             x=alt.X("value:Q", title=f"{rank_by}, points per game"),
             y=alt.Y("Team:N", sort="-x", title=None),
-            tooltip=["Team", "Best lineup PPG", "Starting PPG", "Left on bench", "note"],
-        ).properties(height=26 * len(chart_df))
-        rule = alt.Chart(pd.DataFrame({"m": [chart_df["value"].median()]})).mark_rule(
-            color="#9A9A94", strokeDash=[4, 4]).encode(x="m:Q")
-        st.altair_chart(bar + rule, width="stretch")
+            color=alt.condition(alt.datum.Mine, alt.value(MY_COLOR), alt.value(OTHER_COLOR)),
+            tooltip=["Team", "Starting PPG", "Best lineup PPG", "Left on bench", "This week Proj"],
+        ).properties(height=26 * len(league))
+        st.altair_chart(bar, width="stretch")
+        if my_team:
+            st.caption(f"Your team ({my_team}) is gold. 'vs you' is each team's {rank_by} minus yours.")
+        else:
+            st.caption("Set **My team** above to highlight your team and compare everyone against you.")
+
+        show = league[["Rk", "Team", "Starting PPG", "Best lineup PPG", "Left on bench", "This week Proj", "vs you"]]
         st.dataframe(
-            strength.sort_values(rank_by, ascending=False, na_position="last").style.format(precision=1, na_rep=""),
+            show.style.format(precision=1, na_rep="").apply(
+                lambda r: [f"background-color: {MY_COLOR}33" if league.loc[r.name, "Mine"] else ""] * len(r), axis=1),
             width="stretch", hide_index=True,
             column_config={
-                "Rk": st.column_config.NumberColumn(width="small", help="Rank by best lineup PPG"),
-                "vs median": st.column_config.NumberColumn(help="Best lineup PPG minus the league median"),
-                "Starting PPG": st.column_config.NumberColumn(help="PPG of the starters entered below"),
-                "Left on bench": st.column_config.NumberColumn(help="Best lineup PPG minus Starting PPG"),
-                "Best week Proj": st.column_config.NumberColumn(help=f"Best lineup by week {next_week} projections"),
-                "Starting Proj": st.column_config.NumberColumn(help=f"Entered starters' week {next_week} projections"),
-                "Bench PPG": st.column_config.NumberColumn(help="Combined PPG of everyone not in the best lineup"),
+                "Rk": st.column_config.NumberColumn(width="small"),
+                "Starting PPG": st.column_config.NumberColumn(help="PPG of the starters entered for that team"),
+                "Best lineup PPG": st.column_config.NumberColumn(help="Strongest lineup their roster could field"),
+                "Left on bench": st.column_config.NumberColumn(help="Best lineup minus starting lineup"),
+                "This week Proj": st.column_config.NumberColumn(
+                    help=f"Week {next_week} projection: starters if entered, otherwise best lineup"),
             },
         )
 
-        pick = st.selectbox("Show a team's lineup", options=list(strength["Team"]))
-        c_best, c_actual = st.columns(2)
-        with c_best:
-            st.markdown("**Best possible lineup**")
-            st.dataframe(lineups[pick]["best"].style.format(precision=1), width="stretch", hide_index=True)
-        with c_actual:
-            st.markdown("**Starting lineup (as entered)**")
-            if lineups[pick]["actual"] is None:
-                st.caption("Not entered yet. Use **Set starting lineups** below.")
-            else:
-                st.dataframe(lineups[pick]["actual"].style.format(precision=1), width="stretch", hide_index=True)
+        # ----- slot heatmap: where each team is strong or thin -----
+        slot_cols = [s for s, _ in lineup.load_slots()[0] if s in strength.columns]
+        long = strength.melt(id_vars=["Team"], value_vars=slot_cols, var_name="Slot", value_name="PPG")
+        long["vs avg"] = long["PPG"] - long.groupby("Slot")["PPG"].transform("mean")
+        spread = max(abs(long["vs avg"].min()), abs(long["vs avg"].max()), 1.0)
+        team_order = league["Team"].tolist()
+        base = alt.Chart(long).encode(
+            x=alt.X("Slot:N", title=None, sort=slot_cols, axis=alt.Axis(orient="top", labelAngle=0)),
+            y=alt.Y("Team:N", title=None, sort=team_order),
+        )
+        cells = base.mark_rect().encode(
+            color=alt.Color("vs avg:Q", scale=alt.Scale(domain=[-spread, 0, spread],
+                                                        range=["#B9CDE5", "#F7F7F4", "#F3D3B0"]),
+                            legend=alt.Legend(title="vs league avg")),
+            tooltip=["Team", "Slot", alt.Tooltip("PPG:Q", format=".1f"), alt.Tooltip("vs avg:Q", format="+.1f")],
+        )
+        text = base.mark_text(fontSize=11).encode(text=alt.Text("PPG:Q", format=".1f"), color=alt.value("#1C1C1C"))
+        st.markdown("**Strength by slot** (best lineup, PPG). Orange = above league average, blue = below. "
+                    "A blue cell on a rival is a trade target; a blue cell on you is a need.")
+        st.altair_chart((cells + text).properties(height=26 * len(team_order)), width="stretch")
 
         missing = ownership.unmatched(table)
         if not missing.empty:
@@ -436,80 +471,104 @@ with tabs[-3]:
                        "Check spelling, or they may not have played yet.")
             st.dataframe(missing, width="stretch", hide_index=True)
 
-    # ----- set starting lineups -----
-    with st.expander("Set starting lineups", expanded=False):
-        teams_list = ownership.league_teams()
-        if not teams_list:
-            st.caption("Add rosters first.")
+    # ===== team detail: one picker for lineup entry, best lineup, and roster edits =====
+    if teams_list:
+        st.divider()
+        st.subheader("Team detail")
+        default_idx = teams_list.index(my_team) if my_team else 0
+        team = st.selectbox("Team", teams_list, index=default_idx, key="detail_team")
+        roster = table[table["Owner"] == team][["full_name", "Player", "Pos", "NFL", "Inj", "PPG", "Proj"]]
+        roster = roster.sort_values(["Pos", "PPG"], ascending=[True, False]).reset_index(drop=True)
+        best = lineup.best_lineup(roster, "PPG")
+        need = lineup.starter_count()
+
+        # A prefill (from "Use best lineup") stays until saved, so the ticks survive reruns while editing.
+        prefill = st.session_state.get("starters_prefill")
+        if prefill is not None and prefill[0] == team:
+            current = set(prefill[1])
         else:
-            need = lineup.starter_count()
-            st.caption(f"Tick the {need} players each team is starting this week, then Save. "
-                       "Saved to data/starters.csv on this computer.")
-            team = st.selectbox("Team", teams_list, key="starters_team")
-            roster = table[table["Owner"] == team][["full_name", "Player", "Pos", "NFL", "Inj", "PPG", "Proj"]]
-            roster = roster.sort_values(["Pos", "PPG"], ascending=[True, False]).reset_index(drop=True)
             current = set(lineup.load_starters().get(team, []))
-            roster.insert(0, "Start", roster["full_name"].isin(current))
+        rev = st.session_state.get("starters_rev", 0)
+
+        left, right = st.columns([3, 2])
+        with left:
+            st.markdown(f"**Starting lineup** — tick the {need} starters, then Save.")
+            roster_view = roster.copy()
+            roster_view.insert(0, "Start", roster_view["full_name"].isin(current))
             edited = st.data_editor(
-                roster.drop(columns=["full_name"]),
-                key=f"starters_editor_{team}_{st.session_state.get('starters_rev', 0)}",
+                roster_view.drop(columns=["full_name"]),
+                key=f"starters_editor_{team}_{rev}",
                 width="stretch", hide_index=True,
                 disabled=["Player", "Pos", "NFL", "Inj", "PPG", "Proj"],
                 column_config={
-                    "Start": st.column_config.CheckboxColumn("Start", default=False),
+                    "Start": st.column_config.CheckboxColumn("Start", default=False, width="small"),
                     "PPG": st.column_config.NumberColumn(format="%.1f"),
                     "Proj": st.column_config.NumberColumn(format="%.1f"),
                 },
             )
             chosen = roster[edited["Start"].values]
             problem = lineup.check_starters(chosen)
+            b1, b2 = st.columns(2)
+            if b1.button("Use best lineup", width="stretch",
+                         help="Tick the best possible lineup; you can adjust before saving"):
+                st.session_state["starters_prefill"] = (team, best["full_name"].tolist())
+                st.session_state["starters_rev"] = rev + 1
+                st.rerun()
+            if b2.button("Save starting lineup", type="primary", width="stretch", disabled=problem is not None):
+                lineup.save_starters(team, chosen["full_name"].tolist())
+                st.session_state.pop("starters_prefill", None)
+                st.session_state["starters_rev"] = rev + 1
+                st.cache_data.clear()
+                st.rerun()
             if problem:
                 st.warning(problem)
             else:
-                st.success(f"{len(chosen)} starters, fits the lineup. Starting PPG: {chosen['PPG'].sum():.1f}")
-            if st.button("Save starting lineup", type="primary", disabled=problem is not None):
-                lineup.save_starters(team, chosen["full_name"].tolist())
-                st.session_state["starters_rev"] = st.session_state.get("starters_rev", 0) + 1
+                saved = set(lineup.load_starters().get(team, []))
+                state = "saved" if saved == set(chosen["full_name"]) else "not saved yet"
+                st.success(f"{len(chosen)} starters, {chosen['PPG'].sum():.1f} PPG ({state}).")
+        with right:
+            st.markdown("**Best possible lineup**")
+            st.dataframe(best[["Slot", "Player", "PPG", "Proj"]].style.format(precision=1),
+                         width="stretch", hide_index=True)
+            if not strength.empty:
+                row = strength[strength["Team"] == team].iloc[0]
+                m1, m2 = st.columns(2)
+                m1.metric("Best lineup PPG", f"{row['Best lineup PPG']:.1f}")
+                if pd.notna(row["Starting PPG"]):
+                    m2.metric("Left on bench", f"{row['Left on bench']:.1f}")
+
+        with st.expander("Edit this roster (move players between teams, add free agents)"):
+            st.caption("Change the Owner dropdown, then Save. Search to find a free agent to add.")
+            new_team = st.text_input("Add a new league team name", key="new_team_name")
+            opts = sorted(set(teams_list + ([new_team.strip()] if new_team.strip() else []))) + [ownership.FREE_AGENT]
+            q = st.text_input("Search all players", key="roster_search", placeholder="name, NFL team, or position")
+            pool = table[["full_name", "Player", "Pos", "NFL", "Owner", "PPG"]]
+            if q.strip():
+                ql = q.strip().lower()
+                hits = pool[pool["Player"].str.lower().str.contains(ql) | pool["NFL"].str.lower().eq(ql)
+                            | pool["Pos"].str.lower().eq(ql)].nlargest(40, "PPG")
+                pool = pd.concat([pool[pool["Owner"] == team], hits]).drop_duplicates("full_name")
+            else:
+                pool = pool[pool["Owner"] == team]
+            pool = pool.sort_values(["Owner", "PPG"], ascending=[True, False]).reset_index(drop=True)
+            rrev = st.session_state.get("roster_rev", 0)
+            edited_r = st.data_editor(
+                pool.drop(columns=["full_name"]),
+                key=f"roster_editor_{team}_{rrev}",
+                width="stretch", hide_index=True, height=min(45 + 35 * len(pool), 500),
+                disabled=["Player", "Pos", "NFL", "PPG"],
+                column_config={
+                    "Owner": st.column_config.SelectboxColumn("Owner", options=opts, required=True),
+                    "PPG": st.column_config.NumberColumn(format="%.1f"),
+                },
+            )
+            changed = pool[edited_r["Owner"].values != pool["Owner"].values]
+            if st.button(f"Save roster changes ({len(changed)})", type="primary", disabled=len(changed) == 0):
+                for i in changed.index:
+                    ownership.set_player(pool.loc[i, "full_name"], edited_r.loc[i, "Owner"])
+                st.session_state["roster_rev"] = rrev + 1
                 st.cache_data.clear()
                 st.rerun()
-
-    # ----- edit rosters -----
-    with st.expander("Edit rosters", expanded=False):
-        st.caption("Change the Owner dropdown for any player, then Save. Pick 'Free Agent' to drop a player.")
-        teams_list = ownership.league_teams()
-        new_team = st.text_input("Add a league team (type a name, press Enter, then it appears in the dropdown)",
-                                 key="new_team_name")
-        if new_team.strip() and new_team.strip() not in teams_list:
-            teams_list = sorted(teams_list + [new_team.strip()])
-        options = teams_list + [ownership.FREE_AGENT]
-
-        q = st.text_input("Search players", key="roster_search", placeholder="name, NFL team, or position")
-        pool = table[["full_name", "Player", "Pos", "NFL", "Owner", "PPG"]].copy()
-        if q.strip():
-            ql = q.strip().lower()
-            pool = pool[pool["Player"].str.lower().str.contains(ql) | pool["NFL"].str.lower().eq(ql)
-                        | pool["Pos"].str.lower().eq(ql)]
-        pool = pool.sort_values("PPG", ascending=False).head(300).reset_index(drop=True)
-        rev = st.session_state.get("roster_rev", 0)
-        edited = st.data_editor(
-            pool.drop(columns=["full_name"]),
-            key=f"roster_editor_{rev}",
-            width="stretch", hide_index=True, height=min(45 + 35 * len(pool), 500),
-            disabled=["Player", "Pos", "NFL", "PPG"],
-            column_config={
-                "Owner": st.column_config.SelectboxColumn("Owner", options=options, required=True),
-                "PPG": st.column_config.NumberColumn(format="%.1f"),
-            },
-        )
-        changed = pool[edited["Owner"].values != pool["Owner"].values]
-        if len(changed):
-            st.write(f"{len(changed)} change(s) pending.")
-        if st.button("Save roster changes", type="primary", disabled=len(changed) == 0):
-            for i in changed.index:
-                ownership.set_player(pool.loc[i, "full_name"], edited.loc[i, "Owner"])
-            st.session_state["roster_rev"] = rev + 1
-            st.cache_data.clear()
-            st.rerun()
 
 with tabs[-2]:
     st.subheader(f"Week {next_week} matchups")

@@ -51,6 +51,22 @@ def load_position_limits() -> dict[str, int]:
     return {k: int(v) for k, v in raw.items() if not k.startswith("_")}
 
 
+SETTINGS_PATH = DATA_DIR / "settings.json"       # small per-computer settings, e.g. which league team is yours
+
+
+def load_settings() -> dict:
+    if SETTINGS_PATH.exists():
+        return json.loads(SETTINGS_PATH.read_text())
+    return {}
+
+
+def save_setting(key: str, value) -> None:
+    DATA_DIR.mkdir(exist_ok=True)
+    s = load_settings()
+    s[key] = value
+    SETTINGS_PATH.write_text(json.dumps(s, indent=2))
+
+
 def current_season() -> int:
     """NFL season year: the season that starts in September of a given year."""
     from datetime import date
