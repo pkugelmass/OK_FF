@@ -16,4 +16,4 @@ primaryColor = "#F2C14E"
 gatherUsageStats = false
 
 [server]
-headless = true
+headless = false

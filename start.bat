@@ -30,5 +30,5 @@ if not exist "%USERPROFILE%\Desktop\Fantasy Football HQ.lnk" (
 )
 
 echo Starting the app... (close this window to stop it)
-.venv\Scripts\python -m streamlit run app.py --server.headless true --browser.gatherUsageStats false
+.venv\Scripts\python -m streamlit run app.py --browser.gatherUsageStats false
 pause
