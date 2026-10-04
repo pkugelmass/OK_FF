@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from ff import backtest, config, lineup, ownership, projections, scoring, stats, store
+from ff import backtest, config, lineup, moves, ownership, projections, scoring, stats, store
 from ff import yahoo
 
 st.set_page_config(page_title="Fantasy Football HQ", page_icon="🏈", layout="wide")
@@ -91,8 +91,12 @@ def build_player_table(_cache_key: str, blend: float, shrink: float) -> tuple[pd
         "Total": g["points"].sum().round(1).values,
         "PPG": g["points"].mean().round(1).values,
         "Last": g["points"].last().round(1).values,
-        "Trend": g["points"].apply(list).values,
     })
+    # Sparkline over every completed week, so a missed game (injury or bye) shows as an empty slot
+    weeks_so_far = list(range(1, last_week + 1))
+    by_week = scored.pivot_table(index="player_id", columns="week", values="points", aggfunc="sum")
+    by_week = by_week.reindex(columns=weeks_so_far).fillna(0.0).round(1)
+    summary["Trend"] = summary["player_id"].map(lambda pid: by_week.loc[pid].tolist()).values
 
     for pos, specs in POSITION_STATS.items():
         for label, col, how in specs:
@@ -343,7 +347,7 @@ week_cols = sorted([c for c in table.columns if c.startswith("W") and c[1:].isdi
 BASE_COLS = ["Rk", "ProjRk", "Player", "Inj", "NFL", "Owner", "G", "Total", "PPG", "Last3", "Opp", "OppFac",
              "Proj", "Trend"]
 
-VIEWS = positions + ["All", "Teams", "Matchups", "Accuracy"]
+VIEWS = positions + ["All", "Teams", "Moves", "Matchups", "Accuracy"]
 st.session_state.setdefault("view_pick", VIEWS[0])
 view_name = st.segmented_control("View", VIEWS, key="view_pick", label_visibility="collapsed") or VIEWS[0]
 
@@ -606,6 +610,88 @@ if view_name == "Teams":
 
     if teams_list:
         team_detail()
+
+if view_name == "Moves":
+    st.subheader("Pickups and trades")
+    mv_settings = config.load_settings()
+    mv_teams = ownership.league_teams()
+    mv_my = mv_settings.get("my_team") if mv_settings.get("my_team") in mv_teams else None
+    if not mv_my:
+        st.info("Set **My team** on the Teams view first. Everything here is measured against your lineup.")
+    else:
+        st.caption(
+            f"Everything below is measured by how much it changes **{mv_my}'s best lineup**, not by raw points. "
+            f"A free agent who wouldn't start for you shows a gain of zero and is left out."
+        )
+
+        # ----- pickups -----
+        st.markdown("#### Free agents who would start for you")
+        pk = moves.pickups(table, mv_my, ownership.FREE_AGENT, scored)
+        if pk.empty:
+            st.write("No free agent would improve your best lineup right now.")
+        else:
+            st.caption("Gain (PPG) = how much your best lineup's season points-per-game rises if you add him. "
+                       "Gain (this week) = same, using this week's projections. Opp trend = his touches per game "
+                       "over the last 3 weeks minus his season average; a rising number means a growing role.")
+            st.dataframe(
+                pk.head(25).style.format(precision=1, na_rep=""),
+                width="stretch", hide_index=True,
+                column_config={
+                    "Gain (PPG)": st.column_config.NumberColumn(format="%+.1f"),
+                    "Gain (this week)": st.column_config.NumberColumn(format="%+.1f"),
+                    "Opp trend": st.column_config.NumberColumn(format="%+.1f"),
+                },
+            )
+
+        cov = moves.coverage(table, mv_my, ownership.FREE_AGENT)
+        if not cov.empty:
+            st.markdown(f"#### Starters you can't play in week {next_week}")
+            st.dataframe(cov.style.format(precision=1, na_rep=""), width="stretch", hide_index=True)
+
+        # ----- trade finder -----
+        st.markdown("#### Trade finder")
+        st.caption("Every 1-for-1 swap with every rival, scored by what it does to both teams' best lineups. "
+                   "A trade where the rival also gains is one they'd actually say yes to.")
+        t1, t2 = st.columns(2)
+        min_gain = t1.slider("Your minimum gain (PPG)", 0.0, 10.0, 1.0, 0.5)
+        max_loss = t2.slider("Most the rival can lose (PPG)", 0.0, 10.0, 1.0, 0.5,
+                             help="0 = only trades that help them too. Higher = lopsided trades they might still take.")
+        tr = moves.trades(table, mv_my, ownership.FREE_AGENT, max_rival_loss=max_loss, min_my_gain=min_gain)
+        if tr.empty:
+            st.write("No swaps meet those limits. Loosen the sliders to see more.")
+        else:
+            rivals = ["All rivals"] + sorted(tr["Rival"].unique())
+            who = st.selectbox("Rival", rivals)
+            show_tr = tr if who == "All rivals" else tr[tr["Rival"] == who]
+            st.dataframe(
+                show_tr.head(40).style.format(precision=1),
+                width="stretch", hide_index=True,
+                column_config={
+                    "Your gain": st.column_config.NumberColumn(format="%+.1f"),
+                    "Their gain": st.column_config.NumberColumn(format="%+.1f"),
+                    "Give VORP": st.column_config.NumberColumn(help="Give PPG minus the best free agent at that position"),
+                    "Get VORP": st.column_config.NumberColumn(help="Get PPG minus the best free agent at that position"),
+                    "Fairness": st.column_config.NumberColumn(help="How far apart the two gains are; lower is more even"),
+                },
+            )
+
+        # ----- buy low / sell high -----
+        buy, sell = moves.buy_low_sell_high(table, mv_my, ownership.FREE_AGENT)
+        b1, b2 = st.columns(2)
+        with b1:
+            st.markdown("#### Buy low (on other teams)")
+            st.caption("Good season average, cold last 3 weeks. Their owner may be frustrated.")
+            if buy.empty:
+                st.write("Nobody fits right now.")
+            else:
+                st.dataframe(buy.style.format(precision=1), width="stretch", hide_index=True)
+        with b2:
+            st.markdown("#### Sell high (yours)")
+            st.caption("Hot last 3 weeks versus season average. Spikes from touchdowns tend to fade.")
+            if sell.empty:
+                st.write("None of your players is running unusually hot.")
+            else:
+                st.dataframe(sell.style.format(precision=1), width="stretch", hide_index=True)
 
 if view_name == "Matchups":
     st.subheader(f"Week {next_week} matchups")

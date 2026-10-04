@@ -45,6 +45,33 @@ def best_lineup(players: pd.DataFrame, metric: str) -> pd.DataFrame:
     return pd.concat(chosen)
 
 
+def lineup_value(pos_vals: list[tuple[str, float]]) -> float:
+    """Fast best-lineup total for a list of (position, value) pairs. Same greedy rule as best_lineup,
+    but plain Python so trade simulations can call it thousands of times."""
+    slots, flex_pos = load_slots()
+    by_pos: dict[str, list[float]] = {}
+    for pos, v in pos_vals:
+        by_pos.setdefault(pos, []).append(0.0 if v is None or v != v else float(v))
+    for vals in by_pos.values():
+        vals.sort(reverse=True)
+    total = 0.0
+    for slot, count in slots:
+        if slot == "FLEX":
+            for _ in range(count):
+                best_pos, best_v = None, -1.0
+                for p in flex_pos:
+                    if by_pos.get(p) and by_pos[p][0] > best_v:
+                        best_pos, best_v = p, by_pos[p][0]
+                if best_pos is not None:
+                    total += by_pos[best_pos].pop(0)
+        else:
+            vals = by_pos.get(slot, [])
+            take = vals[:count]
+            total += sum(take)
+            del vals[:count]
+    return total
+
+
 def check_starters(players: pd.DataFrame) -> str | None:
     """None if these players fit the lineup slots exactly, else a plain-English problem."""
     slots, flex_pos = load_slots()

@@ -60,6 +60,10 @@ part of the repo, so updates never touch it.
   or thin. **Team detail** below has one team picker: tick starters (or click "Use best lineup"),
   see the best lineup beside it, and edit the roster with an Owner dropdown. Everything saves to the
   local `data/` folder. Flags roster entries that didn't match a player.
+- **Moves** tab: free agents who would actually start for your team (ranked by how much they raise
+  your best lineup), starters you can't play this week with the best replacement, a trade finder that
+  simulates every 1-for-1 swap with every rival and keeps the ones both sides gain from, and
+  buy-low / sell-high lists. Needs **My team** set on the Teams tab.
 - **Matchups** tab: heatmap of how each opponent affects each position.
 - **Accuracy** tab: re-runs the projections for past weeks and reports how far off they were, next to two
   naive baselines. Sliders there tune the model live; "Reset to defaults" puts it back.
