@@ -14,7 +14,14 @@ if not exist .venv\Scripts\python.exe (
     pause
     exit /b 1
   )
-  .venv\Scripts\python -m pip install -q -r requirements.txt
+  echo Installing packages. This takes 2-5 minutes on a new computer; you'll see progress below.
+  .venv\Scripts\python -m pip install -r requirements.txt
+  if errorlevel 1 (
+    echo.
+    echo Package install failed. Check your internet connection, then run this again.
+    pause
+    exit /b 1
+  )
 )
 
 REM Desktop shortcut (points to update.bat so it always pulls the latest version first)
