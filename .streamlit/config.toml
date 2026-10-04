@@ -17,3 +17,4 @@ gatherUsageStats = false
 
 [server]
 headless = false
+address = "localhost"
